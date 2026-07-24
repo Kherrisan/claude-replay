@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.10.0
+
+### Player
+- Paced-wording playback mode — prose illuminates one word at a time at a configurable reading pace (default 238 WPM), with word-length scaling, deterministic jitter, and punctuation-aware pauses. Fenced code reveals as one atomic block; thinking and tool blocks keep section reveal. Contributed by @hesreallyhim (#24)
+- More precise playback timing; pausing during the between-turn dwell now resumes the remaining time instead of restarting it
+
+### CLI
+- New `--pacing sections|paced-wording` and `--reading-wpm N` options (require `--timing paced`)
+
+### Editor & Website
+- Text reveal and base-WPM controls in the local editor
+- Word-by-word reveal and WPM controls in the online demo at es617.dev/claude-replay
+
+### CI
+- Hardened workflows: minimal token permissions, SHA-pinned actions with Dependabot updates, `npm ci`, job timeouts, node 24 in the test matrix
+
 ## 0.9.0
 
 ### New Formats

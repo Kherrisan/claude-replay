@@ -3,13 +3,20 @@ import assert from "node:assert/strict";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { writeFileSync, unlinkSync, existsSync } from "node:fs";
-import { tmpdir, homedir } from "node:os";
+import { writeFileSync, unlinkSync, existsSync, mkdirSync, rmSync, copyFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { render } from "../src/renderer.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const FIXTURE_PATH = resolve(__dirname, "e2e", "fixture.jsonl");
+const SOURCE_FIXTURE = resolve(__dirname, "e2e", "fixture.jsonl");
 const HELPER_PATH = join(tmpdir(), `editor-test-helper-${process.pid}.mjs`);
+
+// The server only serves paths under $HOME (assertUnderHome), so run it with a
+// fake home in tmp and keep every fixture the tests load inside it. This keeps
+// the suite independent of where the repo is checked out and stops autosave
+// tests from writing into the real home directory.
+const TEST_HOME = join(tmpdir(), `claude-replay-test-home-${process.pid}`);
+const FIXTURE_PATH = join(TEST_HOME, "fixture.jsonl");
 
 let baseUrl;
 
@@ -20,6 +27,9 @@ describe("editor-server API", () => {
     const port = 10000 + Math.floor(Math.random() * 50000);
     baseUrl = `http://127.0.0.1:${port}`;
 
+    mkdirSync(TEST_HOME, { recursive: true });
+    copyFileSync(SOURCE_FIXTURE, FIXTURE_PATH);
+
     const srcPath = resolve(__dirname, "..", "src", "editor-server.mjs").replace(/\\/g, "/");
     writeFileSync(
       HELPER_PATH,
@@ -28,6 +38,7 @@ describe("editor-server API", () => {
 
     child = spawn(process.execPath, [HELPER_PATH], {
       stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, HOME: TEST_HOME, USERPROFILE: TEST_HOME },
     });
 
     await new Promise((res, rej) => {
@@ -53,6 +64,7 @@ describe("editor-server API", () => {
   after(() => {
     if (child) child.kill();
     try { unlinkSync(HELPER_PATH); } catch { /* ignore */ }
+    try { rmSync(TEST_HOME, { recursive: true, force: true }); } catch { /* ignore */ }
   });
 
   it("GET /api/sessions returns groups array", async () => {
@@ -91,7 +103,7 @@ describe("editor-server API", () => {
     const res = await fetch(`${baseUrl}/api/load`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: resolve(homedir(), "nonexistent-file-abc123.jsonl") }),
+      body: JSON.stringify({ path: resolve(TEST_HOME, "nonexistent-file-abc123.jsonl") }),
     });
     assert.equal(res.status, 500);
     const data = await res.json();
@@ -259,7 +271,7 @@ describe("editor-server API", () => {
     const res = await fetch(`${baseUrl}/api/browse`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: resolve(__dirname, "e2e") }),
+      body: JSON.stringify({ path: TEST_HOME }),
     });
     assert.equal(res.status, 200);
     const data = await res.json();
@@ -274,7 +286,7 @@ describe("editor-server API", () => {
     const res = await fetch(`${baseUrl}/api/browse`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: join(homedir(), "nonexistent-dir-xyz789") }),
+      body: JSON.stringify({ path: join(TEST_HOME, "nonexistent-dir-xyz789") }),
     });
     assert.equal(res.status, 400);
     const data = await res.json();
@@ -426,7 +438,7 @@ describe("editor-server API", () => {
 
   it("autosaves edits to disk and restores on reload", async () => {
     // Use a unique fixture copy to avoid interfering with other tests
-    const tmpFixture = join(homedir(), `.claude-replay-autosave-test-${process.pid}.jsonl`);
+    const tmpFixture = join(TEST_HOME, `.claude-replay-autosave-test-${process.pid}.jsonl`);
     const { readFileSync: rf, copyFileSync } = await import("node:fs");
     copyFileSync(FIXTURE_PATH, tmpFixture);
 
@@ -460,7 +472,7 @@ describe("editor-server API", () => {
       // Verify autosave file exists
       const { createHash } = await import("node:crypto");
       const hash = createHash("sha256").update(tmpFixture).digest("hex").slice(0, 16);
-      const autosaveFile = join(homedir(), ".claude-replay", "autosave", hash + ".json");
+      const autosaveFile = join(TEST_HOME, ".claude-replay", "autosave", hash + ".json");
       assert.ok(existsSync(autosaveFile), "autosave file should exist");
 
       // Force a new session by clearing in-memory cache — delete session from server
@@ -479,14 +491,14 @@ describe("editor-server API", () => {
       try {
         const { createHash } = await import("node:crypto");
         const hash = createHash("sha256").update(tmpFixture).digest("hex").slice(0, 16);
-        const f = join(homedir(), ".claude-replay", "autosave", hash + ".json");
+        const f = join(TEST_HOME, ".claude-replay", "autosave", hash + ".json");
         if (existsSync(f)) unlinkSync(f);
       } catch {}
     }
   });
 
   it("reset deletes autosave file", async () => {
-    const tmpFixture = join(homedir(), `.claude-replay-reset-test-${process.pid}.jsonl`);
+    const tmpFixture = join(TEST_HOME, `.claude-replay-reset-test-${process.pid}.jsonl`);
     const { copyFileSync } = await import("node:fs");
     copyFileSync(FIXTURE_PATH, tmpFixture);
 
@@ -513,7 +525,7 @@ describe("editor-server API", () => {
 
       const { createHash } = await import("node:crypto");
       const hash = createHash("sha256").update(tmpFixture).digest("hex").slice(0, 16);
-      const autosaveFile = join(homedir(), ".claude-replay", "autosave", hash + ".json");
+      const autosaveFile = join(TEST_HOME, ".claude-replay", "autosave", hash + ".json");
       assert.ok(existsSync(autosaveFile), "autosave should exist before reset");
 
       // Reset
@@ -596,7 +608,7 @@ describe("editor-server API", () => {
       { index: 1, user_text: "Test", blocks: [{ kind: "text", text: "Reply", tool_call: null }] },
     ];
     const html = render(sampleTurns, { minified: false, redactSecrets: false });
-    const tmpHtml = join(homedir(), `.claude-replay-test-${process.pid}.html`);
+    const tmpHtml = join(TEST_HOME, `.claude-replay-test-${process.pid}.html`);
     writeFileSync(tmpHtml, html);
 
     try {
@@ -617,7 +629,7 @@ describe("editor-server API", () => {
   });
 
   it("POST /api/load rejects invalid .html files", async () => {
-    const tmpHtml = join(homedir(), `.claude-replay-test-bad-${process.pid}.html`);
+    const tmpHtml = join(TEST_HOME, `.claude-replay-test-bad-${process.pid}.html`);
     writeFileSync(tmpHtml, "<html><body>Not a replay</body></html>");
 
     try {

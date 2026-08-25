@@ -1,14 +1,29 @@
 /**
  * Parse AI coding session transcripts into structured turns.
  *
- * Supports: Claude Code, Cursor, Codex CLI, Gemini CLI, OpenCode, and replay JSONL.
+ * Supports: Claude Code, Cursor, Codex CLI, Gemini CLI, OpenCode, Kimi Code,
+ * Grok Build, and replay JSONL.
  *
  * This module is the public API — it delegates to format-specific parsers in src/formats/.
  * To add support for a new agent/CLI, see CONTRIBUTING.md.
  */
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { detectFormatFromText, parseFromText } from "./formats/index.mjs";
+
+/**
+ * Grok Build stores conversation text in chat_history.jsonl. events.jsonl is
+ * telemetry only. When the caller passes events.jsonl, prefer the sibling
+ * chat_history.jsonl so session-id / agent-home lookups still replay.
+ * @param {string} filePath
+ * @returns {string}
+ */
+function resolveTranscriptFile(filePath) {
+  if (basename(filePath) !== "events.jsonl") return filePath;
+  const sibling = join(dirname(filePath), "chat_history.jsonl");
+  return existsSync(sibling) ? sibling : filePath;
+}
 
 /**
  * @typedef {import("./formats/shared.mjs").ToolCall} ToolCall
@@ -25,7 +40,7 @@ export { detectFormatFromText };
  * @returns {string}
  */
 export function detectFormat(filePath) {
-  return detectFormatFromText(readFileSync(filePath, "utf-8"));
+  return detectFormatFromText(readFileSync(resolveTranscriptFile(filePath), "utf-8"));
 }
 
 /**
@@ -34,7 +49,7 @@ export function detectFormat(filePath) {
  * @returns {Turn[]}
  */
 export function parseTranscript(filePath) {
-  return parseTranscriptFromText(readFileSync(filePath, "utf-8"));
+  return parseTranscriptFromText(readFileSync(resolveTranscriptFile(filePath), "utf-8"));
 }
 
 /**

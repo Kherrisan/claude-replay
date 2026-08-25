@@ -2,7 +2,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { parseTranscript, parseTranscriptFromText, filterTurns, detectFormat, detectFormatFromText, applyPacedTiming } from "../src/parser.mjs";
 import { extractTitle } from "../src/formats/claude-code.mjs";
-import { writeFileSync, unlinkSync } from "node:fs";
+import { extractTitle as extractGrokTitle } from "../src/formats/grok.mjs";
+import { mkdtempSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -16,6 +17,8 @@ const CODEX_EDGES_FIXTURE = new URL("./fixture-codex-edges.jsonl", import.meta.u
 const GEMINI_FIXTURE = new URL("./fixture-gemini.json", import.meta.url).pathname;
 const OPENCODE_FIXTURE = new URL("./fixture-opencode.jsonl", import.meta.url).pathname;
 const KIMI_CODE_FIXTURE = new URL("./fixture-kimi-code.jsonl", import.meta.url).pathname;
+const GROK_FIXTURE = new URL("./fixture-grok.jsonl", import.meta.url).pathname;
+const GROK_EVENTS_FIXTURE = new URL("./fixture-grok-events.jsonl", import.meta.url).pathname;
 
 describe("parseTranscript", () => {
   // Fixture produces 3 turns (orphan assistant after tool result merges into previous):
@@ -704,6 +707,95 @@ describe("Kimi Code format", () => {
   });
 });
 
+describe("Grok Build format", () => {
+  it("detects grok chat_history format", () => {
+    assert.equal(detectFormat(GROK_FIXTURE), "grok");
+  });
+
+  it("detects grok events.jsonl telemetry", () => {
+    assert.equal(detectFormat(GROK_EVENTS_FIXTURE), "grok");
+  });
+
+  it("does not confuse grok with claude-code", () => {
+    assert.equal(detectFormat(FIXTURE), "claude-code");
+    assert.equal(detectFormat(GROK_FIXTURE), "grok");
+  });
+
+  it("parses turns from grok chat_history", () => {
+    const turns = parseTranscript(GROK_FIXTURE);
+    assert.equal(turns.length, 2);
+  });
+
+  it("skips system prompts and context-only user messages", () => {
+    const turns = parseTranscript(GROK_FIXTURE);
+    assert.equal(turns[0].user_text, "Hello, what is 2+2?");
+    assert.equal(turns[1].user_text, "Read the file test.txt then run a command that fails.");
+  });
+
+  it("extracts thinking from reasoning summaries", () => {
+    const turns = parseTranscript(GROK_FIXTURE);
+    const thinking = turns[0].blocks.filter((b) => b.kind === "thinking");
+    assert.equal(thinking.length, 1);
+    assert.match(thinking[0].text, /simple arithmetic/);
+  });
+
+  it("extracts assistant text", () => {
+    const turns = parseTranscript(GROK_FIXTURE);
+    const text = turns[0].blocks.filter((b) => b.kind === "text");
+    assert.equal(text.length, 1);
+    assert.equal(text[0].text, "2 + 2 = 4");
+  });
+
+  it("maps Grok tools to Claude Code names and file_path", () => {
+    const turns = parseTranscript(GROK_FIXTURE);
+    const readBlock = turns[1].blocks.find((b) => b.kind === "tool_use" && b.tool_call.name === "Read");
+    assert.ok(readBlock, "should have a Read tool_use block");
+    assert.equal(readBlock.tool_call.input.file_path, "/tmp/test.txt");
+  });
+
+  it("attaches tool results", () => {
+    const turns = parseTranscript(GROK_FIXTURE);
+    const readBlock = turns[1].blocks.find((b) => b.kind === "tool_use" && b.tool_call.name === "Read");
+    assert.equal(readBlock.tool_call.result, "hello world");
+  });
+
+  it("marks non-zero exit tool calls as errors", () => {
+    const turns = parseTranscript(GROK_FIXTURE);
+    const bashBlock = turns[1].blocks.find((b) => b.kind === "tool_use" && b.tool_call.name === "Bash");
+    assert.ok(bashBlock, "should have a Bash tool_use block");
+    assert.equal(bashBlock.tool_call.input.command, "cat /nonexistent/file");
+    assert.equal(bashBlock.tool_call.is_error, true);
+    assert.match(bashBlock.tool_call.result, /No such file/);
+  });
+
+  it("assigns sequential turn indices", () => {
+    const turns = parseTranscript(GROK_FIXTURE);
+    assert.deepEqual(
+      turns.map((t) => t.index),
+      [1, 2],
+    );
+  });
+
+  it("extracts a title from the first user query", () => {
+    assert.equal(extractGrokTitle(readFileSync(GROK_FIXTURE, "utf-8")), "Hello, what is 2+2?");
+  });
+
+  it("parses events.jsonl as empty without a sibling chat_history", () => {
+    const turns = parseTranscript(GROK_EVENTS_FIXTURE);
+    assert.equal(turns.length, 0);
+  });
+
+  it("rewrites events.jsonl to sibling chat_history.jsonl", () => {
+    const dir = mkdtempSync(join(tmpdir(), "grok-events-"));
+    writeFileSync(join(dir, "chat_history.jsonl"), readFileSync(GROK_FIXTURE));
+    writeFileSync(join(dir, "events.jsonl"), readFileSync(GROK_EVENTS_FIXTURE));
+    assert.equal(detectFormat(join(dir, "events.jsonl")), "grok");
+    const turns = parseTranscript(join(dir, "events.jsonl"));
+    assert.equal(turns.length, 2);
+    assert.equal(turns[0].user_text, "Hello, what is 2+2?");
+  });
+});
+
 describe("Turn structure contract", () => {
   // Every format must produce turns matching the same shape.
   // This catches format parsers that forget fields or return wrong types.
@@ -714,6 +806,7 @@ describe("Turn structure contract", () => {
     { name: "gemini", path: GEMINI_FIXTURE },
     { name: "opencode", path: OPENCODE_FIXTURE },
     { name: "kimi-code", path: KIMI_CODE_FIXTURE },
+    { name: "grok", path: GROK_FIXTURE },
   ];
 
   for (const { name, path } of fixtures) {

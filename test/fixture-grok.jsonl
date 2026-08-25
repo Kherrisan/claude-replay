@@ -1,0 +1,13 @@
+{"type": "system", "content": "You are Grok 4.5 released by xAI. You are an interactive CLI tool."}
+{"type": "user", "content": [{"type": "text", "text": "<user_info>\nOS Version: linux\nWorkspace Path: /tmp/demo\n</user_info>"}]}
+{"type": "user", "content": [{"type": "text", "text": "<system-reminder>\nThe following skills are available for use.\n</system-reminder>"}]}
+{"type": "user", "content": [{"type": "text", "text": "<user_query>\nHello, what is 2+2?\n</user_query>"}], "prompt_index": 0}
+{"type": "reasoning", "id": "rs_1", "summary": [{"type": "summary_text", "text": "The user asked a simple arithmetic question. I can answer directly."}], "encrypted_content": "ignored", "status": "completed"}
+{"type": "assistant", "content": "2 + 2 = 4", "model_id": "grok-4.6", "model_fingerprint": "fp_test", "reasoning_effort": "low"}
+{"type": "user", "content": [{"type": "text", "text": "<user_query>\nRead the file test.txt then run a command that fails.\n</user_query>"}], "prompt_index": 1}
+{"type": "reasoning", "id": "rs_2", "summary": [{"type": "summary_text", "text": "I should read the file with Read, then run Bash."}], "encrypted_content": "ignored", "status": "completed"}
+{"type": "assistant", "content": "I'll read the file first.", "tool_calls": [{"id": "call_read1", "name": "read_file", "arguments": "{\"target_file\":\"/tmp/test.txt\"}"}], "model_id": "grok-4.6"}
+{"type": "tool_result", "tool_call_id": "call_read1", "content": "hello world"}
+{"type": "assistant", "content": "", "tool_calls": [{"id": "call_bash1", "name": "run_terminal_command", "arguments": "{\"command\":\"cat /nonexistent/file\",\"description\":\"Fail on purpose\"}"}], "model_id": "grok-4.6"}
+{"type": "tool_result", "tool_call_id": "call_bash1", "content": "exit: 1\ncat: /nonexistent/file: No such file or directory"}
+{"type": "assistant", "content": "The command failed: file not found.", "model_id": "grok-4.6"}

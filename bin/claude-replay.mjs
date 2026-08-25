@@ -123,12 +123,12 @@ if (values.help) {
        claude-replay <input> [input2...] [options]  Generate replay from CLI
        claude-replay extract <replay.html> [-o output.jsonl]
 
-Convert Claude Code, Cursor, Codex, and Gemini CLI session transcripts into embeddable HTML replays.
+Convert Claude Code, Cursor, Codex, Gemini CLI, OpenCode, Kimi Code, and Grok Build session transcripts into embeddable HTML replays.
 
 <input> can be a .jsonl/.json file path or a session ID. If it does not end
 in .jsonl/.json and is not an existing file, it is treated as a session ID
 and searched in ~/.claude/projects/, ~/.cursor/projects/, ~/.codex/sessions/,
-and ~/.gemini/tmp/.
+~/.gemini/tmp/, and ~/.grok/sessions/.
 
 Multiple inputs are concatenated into a single replay (up to 20). Sessions
 with timestamps are sorted chronologically; otherwise command-line order is
@@ -488,7 +488,7 @@ function buildReplay() {
     redactSecrets: !values["no-auto-redact"],
     redactRules,
     userLabel: values["user-label"],
-    assistantLabel: values["assistant-label"] || (format === "gemini" ? "Gemini" : format === "codex" ? "Codex" : format === "cursor" ? "Assistant" : format === "opencode" ? "OpenCode" : format === "kimi-code" ? "Kimi" : "Claude"),
+    assistantLabel: values["assistant-label"] || (format === "gemini" ? "Gemini" : format === "codex" ? "Codex" : format === "cursor" ? "Assistant" : format === "opencode" ? "OpenCode" : format === "kimi-code" ? "Kimi" : format === "grok" ? "Grok" : "Claude"),
     title,
     description: values.description,
     ogImage: values["og-image"],

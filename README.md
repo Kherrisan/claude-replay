@@ -12,18 +12,19 @@
 ![Gemini CLI](https://img.shields.io/badge/Gemini_CLI-replay-orange)
 ![OpenCode](https://img.shields.io/badge/OpenCode-replay-red)
 ![Kimi Code](https://img.shields.io/badge/Kimi_Code-replay-teal)
+![Grok Build](https://img.shields.io/badge/Grok_Build-replay-black)
 
 > Community tool — not affiliated with or endorsed by Anthropic.
 
 AI coding sessions are great for development, but hard to share. Screen recordings are bulky and transcripts are hard to navigate.
 
-**claude-replay** turns Claude Code, Cursor, Codex CLI, Gemini CLI, OpenCode, and Kimi Code session logs into interactive, shareable HTML replays. The generated replay is a single self-contained HTML file with no external dependencies — you can email it, host it anywhere, or embed it in documentation. Use `--serve --watch` to monitor agent sessions live as they run.
+**claude-replay** turns Claude Code, Cursor, Codex CLI, Gemini CLI, OpenCode, Kimi Code, and Grok Build session logs into interactive, shareable HTML replays. The generated replay is a single self-contained HTML file with no external dependencies — you can email it, host it anywhere, or embed it in documentation. Use `--serve --watch` to monitor agent sessions live as they run.
 
 ![Demo](https://raw.githubusercontent.com/es617/claude-replay/main/docs/demo.gif)
 
 **[Try it online](https://es617.dev/claude-replay/)** · **[Live demo](https://es617.dev/claude-replay/demo-redaction.html)**
 
-Claude Code, Cursor, Codex CLI, Gemini CLI, OpenCode, and Kimi Code store conversation transcripts on disk. **claude-replay** auto-detects the format and converts them into visual replays suitable for blog posts, demos, and documentation.
+Claude Code, Cursor, Codex CLI, Gemini CLI, OpenCode, Kimi Code, and Grok Build store conversation transcripts on disk. **claude-replay** auto-detects the format and converts them into visual replays suitable for blog posts, demos, and documentation.
 
 | Source | Transcript location |
 |---|---|
@@ -33,6 +34,7 @@ Claude Code, Cursor, Codex CLI, Gemini CLI, OpenCode, and Kimi Code store conver
 | Gemini CLI | `~/.gemini/tmp/<projectHash>/chats/` |
 | OpenCode | Export via `opencode export <sessionID>` |
 | Kimi Code | `~/.kimi-code/sessions/<project>/<session>/agents/<name>/wire.jsonl` |
+| Grok Build | `~/.grok/sessions/<cwd>/<session>/chat_history.jsonl` |
 
 ## Features
 
@@ -109,7 +111,7 @@ claude-replay session1-id session2-id -o combined.html
 
 Running `claude-replay` with no arguments opens a browser-based editor that auto-discovers your Claude Code and Cursor sessions. From there you can browse, edit, preview, and export replays visually.
 
-For CLI usage, you can pass just a session ID — claude-replay will search `~/.claude/projects/`, `~/.cursor/projects/`, `~/.codex/sessions/`, and `~/.gemini/tmp/` to find the matching file. Or pass the full path to a session file directly.
+For CLI usage, you can pass just a session ID — claude-replay will search `~/.claude/projects/`, `~/.cursor/projects/`, `~/.codex/sessions/`, `~/.gemini/tmp/`, and `~/.grok/sessions/` to find the matching file. Or pass the full path to a session file directly.
 
 ### Cursor
 
@@ -155,6 +157,15 @@ claude-replay session.jsonl -o replay.html
 
 Kimi Code (Moonshot AI) transcripts are supported — the format is auto-detected. Kimi Code stores sessions as `wire.jsonl` under `~/.kimi-code/sessions/`, with each subagent in its own `agents/<name>/` directory; the web editor discovers the main session alongside any subagents. Thinking blocks and tool calls are rendered natively.
 
+### Grok Build
+
+Grok Build (xAI) transcripts are supported — the format is auto-detected. Grok stores conversation text in `chat_history.jsonl` under `~/.grok/sessions/<urlencoded-cwd>/<session-id>/`. The sibling `events.jsonl` is telemetry only; if you pass that path, claude-replay reads `chat_history.jsonl` from the same directory when present. Thinking summaries and tool calls (`read_file`, `run_terminal_command`, `search_replace`, …) are mapped to Claude Code equivalents for consistent rendering. Grok transcripts have no per-turn timestamps, so playback uses paced timing by default.
+
+```bash
+claude-replay ~/.grok/sessions/%2Fhome%2Fme%2Fproject/<session-id>/chat_history.jsonl -o replay.html
+claude-replay <session-id> -o replay.html  # searches ~/.grok/sessions/ automatically
+```
+
 ## Web Editor
 
 The default experience. Launch it by running `claude-replay` with no arguments:
@@ -167,7 +178,7 @@ claude-replay --port 8080
 ![Editor](https://raw.githubusercontent.com/es617/claude-replay/main/docs/editor-demo.gif)
 
 The editor provides:
-- **Session browser** — auto-discovers sessions from `~/.claude/projects/`, `~/.cursor/projects/`, `~/.codex/sessions/`, and `~/.gemini/tmp/`, plus a folder navigator for session files stored elsewhere
+- **Session browser** — auto-discovers sessions from `~/.claude/projects/`, `~/.cursor/projects/`, `~/.codex/sessions/`, `~/.gemini/tmp/`, and `~/.grok/sessions/`, plus a folder navigator for session files stored elsewhere
 - **Turn editor** — include/exclude turns, edit user prompts, expand assistant blocks (read-only), add bookmarks
 - **Options panel** — theme, speed, thinking/tool call toggles, redaction rules, labels
 - **Live preview** — updates as you edit, renders the same output as the CLI
@@ -183,7 +194,7 @@ claude-replay <input> [input2...] [options]     Generate replay from CLI
 claude-replay extract <replay.html> [-o output.jsonl] [--format jsonl|json]
 ```
 
-Each `<input>` can be a session file path or a session ID. If it is not an existing file path, it is treated as a session ID. claude-replay searches `~/.claude/projects/`, `~/.cursor/projects/`, `~/.codex/sessions/`, and `~/.gemini/tmp/` for a matching session file. You can find your current session ID in Claude Code by running `/status`.
+Each `<input>` can be a session file path or a session ID. If it is not an existing file path, it is treated as a session ID. claude-replay searches `~/.claude/projects/`, `~/.cursor/projects/`, `~/.codex/sessions/`, `~/.gemini/tmp/`, and `~/.grok/sessions/` for a matching session file. You can find your current session ID in Claude Code by running `/status`.
 
 Multiple inputs are concatenated into a single replay (up to 20). When all sessions have timestamps, turns are sorted chronologically; otherwise command-line order is used. This is useful when accepting a plan creates a new session — chain the sessions to get the full story in one replay.
 
@@ -482,6 +493,10 @@ Event-based JSONL with typed events (`session_meta`, `response_item`, `event_msg
 ### Gemini CLI
 
 Single JSON file with a `sessionId` field and a `messages` array containing `user` and `gemini` typed entries. Includes timestamps, inline thinking blocks (thoughts), and tool calls with nested results. Tool names (`run_shell_command`, `read_file`, `edit_file`, etc.) are mapped to Claude Code equivalents for consistent rendering. The format is auto-detected — no flags needed.
+
+### Grok Build
+
+JSONL conversation log (`chat_history.jsonl`) with `system` / `user` / `reasoning` / `assistant` / `tool_result` items. User text is wrapped in `<user_query>` (plus context tags that are stripped). Tool names are mapped to Claude Code equivalents. The companion `events.jsonl` file is telemetry and is not required for replay. The format is auto-detected — no flags needed.
 
 ## Requirements
 

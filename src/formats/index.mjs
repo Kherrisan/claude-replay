@@ -15,6 +15,7 @@ import * as claudeCode from "./claude-code.mjs";
 import * as cursor from "./cursor.mjs";
 import * as codex from "./codex.mjs";
 import * as gemini from "./gemini.mjs";
+import * as grok from "./grok.mjs";
 import * as kimiCode from "./kimi-code.mjs";
 import * as opencode from "./opencode.mjs";
 import * as replay from "./replay.mjs";
@@ -22,7 +23,7 @@ import * as replay from "./replay.mjs";
 /**
  * Ordered list of JSONL-based format detectors.
  * Detection is tried in order; first match wins.
- * More specific formats (codex, opencode, replay) must come before
+ * More specific formats (codex, opencode, replay, grok) must come before
  * generic ones (claude-code, cursor).
  */
 export const formats = [
@@ -30,6 +31,7 @@ export const formats = [
   codex,
   opencode,
   kimiCode,
+  grok,
   claudeCode,
   cursor,
 ];

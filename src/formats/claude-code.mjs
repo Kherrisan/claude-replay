@@ -5,7 +5,7 @@
  * Each user message starts a new turn. Assistant blocks are collected and tool results attached.
  */
 
-import { buildTurnsFromEntries } from "./shared.mjs";
+import { buildTurnsFromEntries, createEntryTurnBuilder } from "./shared.mjs";
 
 export const name = "claude-code";
 
@@ -38,6 +38,11 @@ function parseEntries(text) {
  */
 export function parse(text) {
   return buildTurnsFromEntries(parseEntries(text));
+}
+
+/** Create the stateful parser used by AgentStream and batch parsing. */
+export function createIncrementalParser() {
+  return createEntryTurnBuilder();
 }
 
 /**

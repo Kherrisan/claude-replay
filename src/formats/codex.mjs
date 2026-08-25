@@ -79,253 +79,280 @@ function parseCodexPatch(patchStr) {
   return { file_path: filePath, old_string: oldLines.join("\n"), new_string: newLines.join("\n"), isNew: false };
 }
 
-/**
- * Parse newer Codex format with item.completed events.
- */
-function parseNewFormat(events) {
-  const blocks = [];
-  let userText = "";
-  let timestamp = "";
+/** Create the stateful parser shared by batch parsing and AgentStream. */
+export function createIncrementalParser() {
+  let mode = "unknown";
+  let turns = [];
+  let currentTurn = null;
+  let pendingCalls = new Map();
 
-  for (const evt of events) {
-    if (evt.type !== "item.completed") continue;
+  const startTurn = (timestamp = "") => {
+    currentTurn = {
+      index: turns.length + 1,
+      user_text: "",
+      blocks: [],
+      timestamp,
+    };
+    pendingCalls = new Map();
+  };
+
+  const ensureNewFormatTurn = () => {
+    if (!currentTurn) startTurn("");
+    return currentTurn;
+  };
+
+  const appendNewFormatItem = (evt) => {
+    if (evt.type !== "item.completed" || !evt.item || typeof evt.item !== "object") return;
+    const turn = ensureNewFormatTurn();
     const item = evt.item;
-    if (!item || typeof item !== "object") continue;
-
     const itemType = item.type ?? "";
-    const ts = evt.timestamp ?? null;
+    const timestamp = evt.timestamp ?? null;
 
     if (itemType === "command_execution") {
-      const cmd = typeof item.command === "string" ? item.command : String(item.command ?? "");
-      const cleanCmd = cmd.replace(/^\/bin\/bash\s+-lc\s+/, "").replace(/^'(.*)'$/, "$1").replace(/^"(.*)"$/, "$1");
-      blocks.push({
-        kind: "tool_use", text: "",
+      const command = typeof item.command === "string" ? item.command : String(item.command ?? "");
+      const cleanCommand = command
+        .replace(/^\/bin\/bash\s+-lc\s+/, "")
+        .replace(/^'(.*)'$/, "$1")
+        .replace(/^"(.*)"$/, "$1");
+      turn.blocks.push({
+        kind: "tool_use",
+        text: "",
         tool_call: {
-          tool_use_id: item.id ?? "", name: "Bash",
-          input: { command: cleanCmd },
+          tool_use_id: item.id ?? "",
+          name: "Bash",
+          input: { command: cleanCommand },
           result: (item.aggregated_output ?? "").trim(),
-          resultTimestamp: ts,
+          resultTimestamp: timestamp,
           is_error: item.exit_code != null && item.exit_code !== 0,
         },
-        timestamp: ts,
+        timestamp,
       });
-    } else if (itemType === "reasoning") {
+      return;
+    }
+    if (itemType === "reasoning" || itemType === "agent_message") {
       const text = item.text ?? "";
-      if (text.trim()) blocks.push({ kind: "thinking", text, tool_call: null, timestamp: ts });
-    } else if (itemType === "agent_message") {
-      const text = item.text ?? "";
-      if (text.trim()) blocks.push({ kind: "text", text, tool_call: null, timestamp: ts });
-    } else if (itemType === "function_call") {
+      if (text.trim()) {
+        turn.blocks.push({
+          kind: itemType === "reasoning" ? "thinking" : "text",
+          text,
+          tool_call: null,
+          timestamp,
+        });
+      }
+      return;
+    }
+    if (itemType === "function_call") {
       const name = item.name ?? "unknown";
       let input = {};
       try { input = JSON.parse(item.arguments ?? "{}"); } catch { input = { raw: item.arguments }; }
-      if (name === "exec_command" && input.cmd) {
-        const cmd = input.workdir ? `cd ${input.workdir} && ${input.cmd}` : input.cmd;
-        input = { command: cmd };
-      }
       let mappedName = name;
-      if (name === "exec_command") mappedName = "Bash";
-      if (name === "apply_patch") {
+      if (name === "exec_command") {
+        if (input.cmd) {
+          input = { command: input.workdir ? `cd ${input.workdir} && ${input.cmd}` : input.cmd };
+        }
+        mappedName = "Bash";
+      } else if (name === "apply_patch") {
         const parsed = parseCodexPatch(item.arguments ?? input.raw ?? "");
         mappedName = parsed.isNew ? "Write" : "Edit";
         input = parsed;
       }
-      blocks.push({
-        kind: "tool_use", text: "",
+      turn.blocks.push({
+        kind: "tool_use",
+        text: "",
         tool_call: {
-          tool_use_id: item.id ?? "", name: mappedName, input,
+          tool_use_id: item.id ?? "",
+          name: mappedName,
+          input,
           result: (item.output ?? "").trim() || null,
-          resultTimestamp: ts, is_error: item.status === "failed",
+          resultTimestamp: timestamp,
+          is_error: item.status === "failed",
         },
-        timestamp: ts,
+        timestamp,
       });
-    } else if (itemType === "message" && (item.role === "user")) {
+      return;
+    }
+    if (itemType === "message" && item.role === "user") {
       const content = item.content ?? [];
       if (Array.isArray(content)) {
-        const textParts = content.filter((b) => b.type === "input_text").map((b) => b.text ?? "");
-        userText = extractCodexUserText(textParts.join("\n"));
+        turn.user_text = extractCodexUserText(
+          content
+            .filter((block) => block.type === "input_text")
+            .map((block) => block.text ?? "")
+            .join("\n"),
+        );
       }
     }
-  }
+  };
 
-  if (!blocks.length) return [];
-  return [{ index: 1, user_text: userText || "Task", blocks, timestamp: timestamp || "" }];
-}
-
-/**
- * Parse Codex CLI JSONL text into Turn[].
- */
-export function parse(text) {
-  const events = [];
-  for (const line of text.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try { events.push(JSON.parse(trimmed)); } catch { continue; }
-  }
-
-  // Detect newer item-based format
-  const isNewFormat = events.some((e) => e.type === "thread.started" || e.type === "item.completed");
-  if (isNewFormat) return parseNewFormat(events);
-
-  const turns = [];
-  let turnIndex = 0;
-  let currentUserText = "";
-  let currentTimestamp = "";
-  let currentBlocks = [];
-  let pendingCalls = new Map();
-  let inTurn = false;
-
-  for (const evt of events) {
+  const appendLegacyEvent = (evt) => {
     const type = evt.type;
     const payload = evt.payload ?? {};
-    const ts = evt.timestamp ?? null;
+    const timestamp = evt.timestamp ?? null;
 
     if (type === "event_msg" && payload.type === "task_started") {
-      inTurn = true;
-      currentUserText = "";
-      currentTimestamp = ts ?? "";
-      currentBlocks = [];
-      pendingCalls = new Map();
-      continue;
+      startTurn(timestamp ?? "");
+      return;
     }
-
     if (type === "event_msg" && payload.type === "task_complete") {
-      if (inTurn) {
-        turnIndex++;
-        turns.push({ index: turnIndex, user_text: currentUserText, blocks: currentBlocks, timestamp: currentTimestamp });
-      }
-      inTurn = false;
-      continue;
+      if (currentTurn) turns.push(currentTurn);
+      currentTurn = null;
+      pendingCalls = new Map();
+      return;
     }
-
-    if (!inTurn) continue;
-
+    if (!currentTurn) return;
     if (type === "event_msg" && payload.type === "user_message") {
-      const msg = payload.message ?? "";
-      currentUserText = extractCodexUserText(msg);
-      if (ts) currentTimestamp = ts;
-      continue;
+      currentTurn.user_text = extractCodexUserText(payload.message ?? "");
+      if (timestamp) currentTurn.timestamp = timestamp;
+      return;
     }
+    if (type !== "response_item") return;
 
-    if (type === "response_item") {
-      const ptype = payload.type;
-      const role = payload.role ?? "";
-      const phase = payload.phase ?? "";
-
-      if (ptype === "message" && role === "user") {
-        const content = payload.content ?? [];
-        if (Array.isArray(content)) {
-          const textParts = content.filter((b) => b.type === "input_text").map((b) => b.text ?? "");
-          const raw = textParts.join("\n");
-          const extracted = extractCodexUserText(raw);
-          if (extracted && !currentUserText) currentUserText = extracted;
-        }
-        continue;
+    const payloadType = payload.type;
+    const role = payload.role ?? "";
+    if (payloadType === "message" && role === "user") {
+      const content = payload.content ?? [];
+      if (Array.isArray(content)) {
+        const extracted = extractCodexUserText(
+          content
+            .filter((block) => block.type === "input_text")
+            .map((block) => block.text ?? "")
+            .join("\n"),
+        );
+        if (extracted && !currentTurn.user_text) currentTurn.user_text = extracted;
       }
-
-      if (ptype === "message" && role === "developer") continue;
-
-      if (ptype === "message" && role === "assistant") {
-        const content = payload.content ?? [];
-        const textParts = [];
-        if (Array.isArray(content)) {
-          for (const b of content) {
-            if (b.type === "output_text") textParts.push(b.text ?? "");
-          }
-        }
-        const blockText = textParts.join("\n").trim();
-        if (!blockText) continue;
-        const kind = phase === "commentary" ? "thinking" : "text";
-        currentBlocks.push({ kind, text: blockText, tool_call: null, timestamp: ts });
-        continue;
+      return;
+    }
+    if (payloadType === "message" && role === "developer") return;
+    if (payloadType === "message" && role === "assistant") {
+      const content = payload.content ?? [];
+      const text = Array.isArray(content)
+        ? content
+            .filter((block) => block.type === "output_text")
+            .map((block) => block.text ?? "")
+            .join("\n")
+            .trim()
+        : "";
+      if (text) {
+        currentTurn.blocks.push({
+          kind: payload.phase === "commentary" ? "thinking" : "text",
+          text,
+          tool_call: null,
+          timestamp,
+        });
       }
-
-      if (ptype === "reasoning") continue;
-
-      if (ptype === "function_call") {
-        const callId = payload.call_id ?? "";
-        const fnName = payload.name ?? "unknown";
-        let input = {};
-        try { input = JSON.parse(payload.arguments ?? "{}"); } catch { input = { raw: payload.arguments }; }
-        if (fnName === "exec_command" && input.cmd) {
-          const cmd = input.workdir ? `cd ${input.workdir} && ${input.cmd}` : input.cmd;
-          input = { command: cmd };
-        }
-        const toolCall = {
-          tool_use_id: callId,
-          name: fnName === "exec_command" ? "Bash" : fnName,
-          input, result: null, resultTimestamp: null, is_error: false,
-        };
-        currentBlocks.push({ kind: "tool_use", text: "", tool_call: toolCall, timestamp: ts });
-        pendingCalls.set(callId, toolCall);
-        continue;
+      return;
+    }
+    if (payloadType === "reasoning") return;
+    if (payloadType === "function_call") {
+      const callId = payload.call_id ?? "";
+      const functionName = payload.name ?? "unknown";
+      let input = {};
+      try { input = JSON.parse(payload.arguments ?? "{}"); } catch { input = { raw: payload.arguments }; }
+      if (functionName === "exec_command" && input.cmd) {
+        input = { command: input.workdir ? `cd ${input.workdir} && ${input.cmd}` : input.cmd };
       }
-
-      if (ptype === "function_call_output") {
-        const callId = payload.call_id ?? "";
-        const output = payload.output ?? "";
-        const cleaned = output.replace(/^Chunk ID:.*\n?/m, "")
+      const toolCall = {
+        tool_use_id: callId,
+        name: functionName === "exec_command" ? "Bash" : functionName,
+        input,
+        result: null,
+        resultTimestamp: null,
+        is_error: false,
+      };
+      currentTurn.blocks.push({ kind: "tool_use", text: "", tool_call: toolCall, timestamp });
+      pendingCalls.set(callId, toolCall);
+      return;
+    }
+    if (payloadType === "function_call_output") {
+      const callId = payload.call_id ?? "";
+      const output = payload.output ?? "";
+      const toolCall = pendingCalls.get(callId);
+      if (toolCall) {
+        toolCall.result = output
+          .replace(/^Chunk ID:.*\n?/m, "")
           .replace(/^Wall time:.*\n?/m, "")
           .replace(/^Process exited with code \d+\n?/m, "")
           .replace(/^Original token count:.*\n?/m, "")
           .replace(/^Output:\n?/m, "")
           .trim();
-        if (pendingCalls.has(callId)) {
-          const tc = pendingCalls.get(callId);
-          tc.result = cleaned;
-          tc.resultTimestamp = ts;
-          tc.is_error = output.includes("Process exited with code") && !output.includes("code 0");
-          pendingCalls.delete(callId);
-        }
-        continue;
+        toolCall.resultTimestamp = timestamp;
+        toolCall.is_error = output.includes("Process exited with code") && !output.includes("code 0");
+        pendingCalls.delete(callId);
       }
-
-      if (ptype === "custom_tool_call") {
-        const callId = payload.call_id ?? "";
-        const toolName = payload.name ?? "unknown";
-        let mappedName = toolName;
-        let input;
-        if (toolName === "apply_patch") {
-          const parsed = parseCodexPatch(payload.input ?? "");
-          mappedName = parsed.isNew ? "Write" : "Edit";
-          input = parsed;
-        } else {
-          input = { raw: payload.input ?? "" };
-        }
-        const toolCall = {
-          tool_use_id: callId, name: mappedName, input,
-          result: null, resultTimestamp: null, is_error: false,
-        };
-        currentBlocks.push({ kind: "tool_use", text: "", tool_call: toolCall, timestamp: ts });
-        pendingCalls.set(callId, toolCall);
-        continue;
-      }
-
-      if (ptype === "custom_tool_call_output") {
-        const callId = payload.call_id ?? "";
-        let output = "";
-        if (typeof payload.output === "string") {
-          output = payload.output;
-        } else if (payload.output?.output) {
-          output = payload.output.output;
-        }
-        if (pendingCalls.has(callId)) {
-          const tc = pendingCalls.get(callId);
-          tc.result = output.trim();
-          tc.resultTimestamp = ts;
-          tc.is_error = typeof payload.output === "object" && payload.output?.metadata?.exit_code !== 0;
-          pendingCalls.delete(callId);
-        }
-        continue;
-      }
+      return;
     }
-  }
+    if (payloadType === "custom_tool_call") {
+      const callId = payload.call_id ?? "";
+      const toolName = payload.name ?? "unknown";
+      const parsed = toolName === "apply_patch" ? parseCodexPatch(payload.input ?? "") : null;
+      const toolCall = {
+        tool_use_id: callId,
+        name: parsed ? (parsed.isNew ? "Write" : "Edit") : toolName,
+        input: parsed ?? { raw: payload.input ?? "" },
+        result: null,
+        resultTimestamp: null,
+        is_error: false,
+      };
+      currentTurn.blocks.push({ kind: "tool_use", text: "", tool_call: toolCall, timestamp });
+      pendingCalls.set(callId, toolCall);
+      return;
+    }
+    if (payloadType === "custom_tool_call_output") {
+      const callId = payload.call_id ?? "";
+      const toolCall = pendingCalls.get(callId);
+      if (!toolCall) return;
+      const output = typeof payload.output === "string"
+        ? payload.output
+        : payload.output?.output ?? "";
+      toolCall.result = output.trim();
+      toolCall.resultTimestamp = timestamp;
+      toolCall.is_error = typeof payload.output === "object" && payload.output?.metadata?.exit_code !== 0;
+      pendingCalls.delete(callId);
+    }
+  };
 
-  // Handle session ending without task_complete
-  if (inTurn && (currentUserText || currentBlocks.length)) {
-    turnIndex++;
-    turns.push({ index: turnIndex, user_text: currentUserText, blocks: currentBlocks, timestamp: currentTimestamp });
-  }
+  return {
+    push(event) {
+      if (!event || typeof event !== "object") return;
+      if (event.type === "thread.started" || event.type === "item.completed") {
+        mode = "new";
+      } else if (mode === "unknown" && (event.type === "event_msg" || event.type === "response_item")) {
+        mode = "legacy";
+      }
+      if (mode === "new") appendNewFormatItem(event);
+      else if (mode === "legacy") appendLegacyEvent(event);
+    },
 
-  return filterEmptyTurns(turns);
+    snapshot() {
+      const snapshotTurns = [...turns];
+      if (currentTurn && (currentTurn.user_text || currentTurn.blocks.length)) {
+        if (mode !== "new" || currentTurn.blocks.length) {
+          snapshotTurns.push(
+            mode === "new" && !currentTurn.user_text
+              ? { ...currentTurn, user_text: "Task" }
+              : currentTurn,
+          );
+        }
+      }
+      return filterEmptyTurns(JSON.parse(JSON.stringify(snapshotTurns)));
+    },
+
+    reset() {
+      mode = "unknown";
+      turns = [];
+      currentTurn = null;
+      pendingCalls = new Map();
+    },
+  };
+}
+
+/** Parse Codex CLI JSONL text into Turn[]. */
+export function parse(text) {
+  const parser = createIncrementalParser();
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try { parser.push(JSON.parse(trimmed)); } catch { /* ignore malformed lines */ }
+  }
+  return parser.snapshot();
 }

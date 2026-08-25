@@ -3,6 +3,23 @@
   "version": "0.8.1",
   "description": "Convert Claude Code, Cursor, and Codex session transcripts into self-contained, embeddable HTML replays",
   "type": "module",
+	"exports": {
+		".": {
+			"types": "./src/parser.mjs",
+			"import": "./src/parser.mjs"
+		},
+		"./agent-stream": {
+			"types": "./src/agent-stream.mjs.d.ts",
+			"import": "./src/agent-stream.mjs"
+		},
+		"./agent-events": {
+			"types": "./src/agent-events.mjs.d.ts",
+			"import": "./src/agent-events.mjs"
+		},
+    "./browser": "./src/browser.mjs",
+    "./parser": "./src/parser.mjs",
+    "./package.json": "./package.json"
+  },
   "bin": {
     "claude-replay": "bin/claude-replay.mjs"
   },

@@ -170,6 +170,197 @@ export function attachToolResults(blocks, entries, resultStart) {
   return i;
 }
 
+function toolResultText(content) {
+  if (Array.isArray(content)) {
+    return content
+      .filter((part) => part.type === "text")
+      .map((part) => part.text ?? "")
+      .join("\n");
+  }
+  if (typeof content === "string") return content;
+  return String(content);
+}
+
+function extractSystemEvents(text) {
+  const systemEvents = [];
+  const userText = text.replace(/\[bg-task:\s*(.+)\]/g, (_, summary) => {
+    systemEvents.push(summary);
+    return "";
+  }).trim();
+  return { userText, systemEvents };
+}
+
+/**
+ * Stateful form of buildTurnsFromEntries. It consumes each normalized Claude
+ * Code entry exactly once, so batch and streaming parsing share semantics.
+ */
+export function createEntryTurnBuilder() {
+  let turns = [];
+  let lastRole = "";
+  let assistantSeenKeys = new Set();
+  let pendingTools = new Map();
+
+  const currentTurn = () => turns[turns.length - 1] ?? null;
+
+  const ensureAssistantTurn = (timestamp) => {
+    let turn = currentTurn();
+    if (!turn) {
+      turn = {
+        index: turns.length + 1,
+        user_text: "",
+        blocks: [],
+        timestamp: timestamp ?? "",
+      };
+      turns.push(turn);
+    }
+    return turn;
+  };
+
+  const appendUserText = (entry) => {
+    const extracted = extractSystemEvents(
+      extractText(entry.message?.content ?? ""),
+    );
+    if (lastRole === "user" && currentTurn()) {
+      const turn = currentTurn();
+      if (extracted.userText) {
+        turn.user_text = turn.user_text
+          ? `${turn.user_text}\n${extracted.userText}`
+          : extracted.userText;
+      }
+      if (extracted.systemEvents.length) {
+        turn.system_events = [
+          ...(turn.system_events ?? []),
+          ...extracted.systemEvents,
+        ];
+      }
+      return;
+    }
+
+    const turn = {
+      index: turns.length + 1,
+      user_text: extracted.userText,
+      blocks: [],
+      timestamp: entry.timestamp ?? "",
+    };
+    if (extracted.systemEvents.length) {
+      turn.system_events = extracted.systemEvents;
+    }
+    turns.push(turn);
+  };
+
+  const attachResults = (entry) => {
+    if (pendingTools.size === 0) return false;
+    const content = entry.message?.content;
+    if (!Array.isArray(content)) return false;
+    let found = false;
+    for (const block of content) {
+      if (block.type !== "tool_result") continue;
+      found = true;
+      const tool = pendingTools.get(block.tool_use_id ?? "");
+      if (!tool) continue;
+      tool.result = toolResultText(block.content).replace(
+        /^<tool_use_error>([\s\S]*)<\/tool_use_error>$/,
+        "$1",
+      );
+      tool.resultTimestamp = entry.timestamp ?? null;
+      tool.is_error = !!block.is_error;
+      pendingTools.delete(block.tool_use_id ?? "");
+    }
+    return found;
+  };
+
+  const appendAssistant = (entry) => {
+    if (lastRole !== "assistant") {
+      assistantSeenKeys = new Set();
+      pendingTools = new Map();
+    }
+    const turn = ensureAssistantTurn(entry.timestamp);
+    const content = entry.message?.content ?? [];
+    if (!Array.isArray(content)) return;
+
+    for (const block of content) {
+      const timestamp = entry.timestamp ?? null;
+      if (block.type === "text") {
+        const text = (block.text ?? "").trim();
+        const key = `text:${text}`;
+        if (!text || text === "No response requested." || assistantSeenKeys.has(key)) {
+          continue;
+        }
+        assistantSeenKeys.add(key);
+        turn.blocks.push({ kind: "text", text, tool_call: null, timestamp });
+        continue;
+      }
+      if (block.type === "thinking") {
+        const text = (block.thinking ?? "").trim();
+        const key = `thinking:${text}`;
+        if (!text || assistantSeenKeys.has(key)) continue;
+        assistantSeenKeys.add(key);
+        turn.blocks.push({ kind: "thinking", text, tool_call: null, timestamp });
+        continue;
+      }
+      if (block.type !== "tool_use") continue;
+      const toolId = block.id ?? "";
+      const key = `tool_use:${toolId}`;
+      if (assistantSeenKeys.has(key)) continue;
+      assistantSeenKeys.add(key);
+      const toolCall = {
+        tool_use_id: toolId,
+        name: block.name ?? "",
+        input: block.input ?? {},
+        result: null,
+        resultTimestamp: null,
+        is_error: false,
+      };
+      turn.blocks.push({
+        kind: "tool_use",
+        text: "",
+        tool_call: toolCall,
+        timestamp,
+      });
+      pendingTools.set(toolId, toolCall);
+    }
+  };
+
+  return {
+    push(entry) {
+      if (!entry || (entry.type !== "user" && entry.type !== "assistant")) {
+        return;
+      }
+      const role = entry.message?.role ?? entry.type;
+      if (role === "assistant") {
+        appendAssistant(entry);
+        lastRole = "assistant";
+        return;
+      }
+      const content = entry.message?.content ?? "";
+      if (role === "user" && Array.isArray(content) && attachResults(entry)) {
+        lastRole = "tool-result";
+        return;
+      }
+      if (role === "user" && isToolResultOnly(content)) {
+        lastRole = "tool-result";
+        return;
+      }
+      if (role === "user") {
+        pendingTools = new Map();
+        appendUserText(entry);
+        lastRole = "user";
+      }
+    },
+
+    snapshot() {
+      return filterEmptyTurns(JSON.parse(JSON.stringify(turns)));
+    },
+
+    reset() {
+      turns = [];
+      lastRole = "";
+      assistantSeenKeys = new Set();
+      pendingTools = new Map();
+    },
+  };
+}
+
 /**
  * Build turns from normalized JSONL entries (Claude Code shape).
  * Shared by claude-code.mjs and cursor.mjs since both use the same
@@ -179,66 +370,9 @@ export function attachToolResults(blocks, entries, resultStart) {
  * @returns {Turn[]}
  */
 export function buildTurnsFromEntries(entries) {
-  const turns = [];
-  let i = 0;
-  let turnIndex = 0;
-
-  while (i < entries.length) {
-    const entry = entries[i];
-    const role = entry.message?.role ?? entry.type;
-
-    if (role === "user") {
-      const content = entry.message?.content ?? "";
-      if (isToolResultOnly(content)) { i++; continue; }
-      let userText = extractText(content);
-      const timestamp = entry.timestamp ?? "";
-      i++;
-
-      // Absorb consecutive non-tool-result user messages
-      while (i < entries.length) {
-        const next = entries[i];
-        const nextRole = next.message?.role ?? next.type;
-        if (nextRole !== "user") break;
-        const nextContent = next.message?.content ?? "";
-        if (isToolResultOnly(nextContent)) break;
-        const nextText = extractText(nextContent);
-        if (nextText) userText = userText ? userText + "\n" + nextText : nextText;
-        i++;
-      }
-
-      // Extract system events (bg-task notifications)
-      const systemEvents = [];
-      userText = userText.replace(/\[bg-task:\s*(.+)\]/g, (_, summary) => {
-        systemEvents.push(summary);
-        return "";
-      });
-      userText = userText.trim();
-
-      const [assistantBlocks, nextI] = collectAssistantBlocks(entries, i);
-      i = nextI;
-      i = attachToolResults(assistantBlocks, entries, i);
-
-      turnIndex++;
-      const turn = { index: turnIndex, user_text: userText, blocks: assistantBlocks, timestamp };
-      if (systemEvents.length) turn.system_events = systemEvents;
-      turns.push(turn);
-    } else if (role === "assistant") {
-      const [assistantBlocks, nextI] = collectAssistantBlocks(entries, i);
-      i = nextI;
-      i = attachToolResults(assistantBlocks, entries, i);
-
-      if (turns.length > 0) {
-        turns[turns.length - 1].blocks.push(...assistantBlocks);
-      } else {
-        turnIndex++;
-        turns.push({ index: turnIndex, user_text: "", blocks: assistantBlocks, timestamp: entry.timestamp ?? "" });
-      }
-    } else {
-      i++;
-    }
-  }
-
-  return filterEmptyTurns(turns);
+  const builder = createEntryTurnBuilder();
+  for (const entry of entries) builder.push(entry);
+  return builder.snapshot();
 }
 
 /**

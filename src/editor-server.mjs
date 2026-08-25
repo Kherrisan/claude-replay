@@ -279,7 +279,7 @@ function buildRenderOpts(options, session, overrides = {}) {
     redactSecrets: options.redactSecrets !== false,
     redactRules: options.redactRules || [],
     userLabel: options.userLabel || "User",
-    assistantLabel: options.assistantLabel || (session.format === "gemini" ? "Gemini" : session.format === "codex" ? "Codex" : session.format === "cursor" ? "Assistant" : session.format === "opencode" ? "OpenCode" : "Claude"),
+    assistantLabel: options.assistantLabel || (session.format === "gemini" ? "Gemini" : session.format === "codex" ? "Codex" : session.format === "cursor" ? "Assistant" : session.format === "opencode" ? "OpenCode" : session.format === "grok" ? "Grok" : "Claude"),
     title: options.title || "Replay",
     description: options.description || "",
     ogImage: options.ogImage || "",
@@ -501,6 +501,39 @@ function discoverSessions() {
       }
     }
     if (codexGroup.projects.length > 0) groups.push(codexGroup);
+  } catch { /* directory doesn't exist */ }
+
+  // Grok Build: ~/.grok/sessions/<urlencoded-cwd>/<session-id>/chat_history.jsonl
+  const grokBase = join(home, ".grok", "sessions");
+  try {
+    const grokGroup = { name: "Grok Build", projects: [] };
+    for (const proj of readdirSync(grokBase).sort()) {
+      const projPath = join(grokBase, proj);
+      try { if (!statSync(projPath).isDirectory()) continue; } catch { continue; }
+      const grokSessions = [];
+      for (const sessionDir of readdirSync(projPath)) {
+        const chatPath = join(projPath, sessionDir, "chat_history.jsonl");
+        try {
+          const st = statSync(chatPath);
+          grokSessions.push({ file: sessionDir, path: chatPath, date: st.mtime.toISOString() });
+        } catch { /* no chat_history.jsonl */ }
+      }
+      if (grokSessions.length === 0) continue;
+      grokSessions.sort((a, b) => {
+        if (!a.date && !b.date) return 0;
+        if (!a.date) return 1;
+        if (!b.date) return -1;
+        return b.date.localeCompare(a.date);
+      });
+      let displayName = proj;
+      try {
+        const decoded = decodeURIComponent(proj);
+        const parts = decoded.split("/").filter(Boolean);
+        displayName = parts.length ? parts[parts.length - 1] : decoded;
+      } catch { /* keep encoded name */ }
+      grokGroup.projects.push({ name: displayName, dirName: proj, sessions: grokSessions });
+    }
+    if (grokGroup.projects.length > 0) groups.push(grokGroup);
   } catch { /* directory doesn't exist */ }
 
   return groups;

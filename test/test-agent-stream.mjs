@@ -6,6 +6,7 @@ import { parseTranscriptFromText } from "../src/parser.mjs";
 
 const CODEX_FIXTURE = readFileSync(new URL("./fixture-codex.jsonl", import.meta.url), "utf8");
 const CLAUDE_FIXTURE = readFileSync(new URL("./fixture.jsonl", import.meta.url), "utf8");
+const GROK_FIXTURE = readFileSync(new URL("./fixture-grok.jsonl", import.meta.url), "utf8");
 
 const feedInChunks = (text, chunkSize, format = "codex") => {
   const parser = createAgentStreamParser({ format });
@@ -26,6 +27,12 @@ describe("AgentStream parser", () => {
   it("matches batch parsing when Claude Code JSONL arrives in arbitrary chunks", () => {
     const result = feedInChunks(CLAUDE_FIXTURE, 13, "claude-code");
     assert.deepEqual(result.turns, parseTranscriptFromText(CLAUDE_FIXTURE));
+    assert.equal(result.warningCount, 0);
+  });
+
+  it("matches batch parsing when Grok chat_history arrives in arbitrary chunks", () => {
+    const result = feedInChunks(GROK_FIXTURE, 19, "grok");
+    assert.deepEqual(result.turns, parseTranscriptFromText(GROK_FIXTURE));
     assert.equal(result.warningCount, 0);
   });
 

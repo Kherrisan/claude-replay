@@ -106,5 +106,28 @@ export function resolveSessionId(sessionId, { home } = {}) {
     }
   } catch { /* directory doesn't exist */ }
 
+  // Grok Build: ~/.grok/sessions/<urlencoded-cwd>/<session-id>/chat_history.jsonl
+  const grokBase = join(homeDir, ".grok", "sessions");
+  try {
+    for (const proj of readdirSync(grokBase)) {
+      const projPath = join(grokBase, proj);
+      try { if (!statSync(projPath).isDirectory()) continue; } catch { continue; }
+      for (const sessionDir of readdirSync(projPath)) {
+        if (sessionDir !== sessionId && !sessionDir.includes(sessionId)) continue;
+        const chatPath = join(projPath, sessionDir, "chat_history.jsonl");
+        try {
+          statSync(chatPath);
+        } catch { continue; }
+        let displayName = proj;
+        try {
+          const decoded = decodeURIComponent(proj);
+          const parts = decoded.split("/").filter(Boolean);
+          displayName = parts.length ? parts[parts.length - 1] : decoded;
+        } catch { /* keep encoded name */ }
+        matches.push({ path: chatPath, project: displayName, group: "Grok Build" });
+      }
+    }
+  } catch { /* directory doesn't exist */ }
+
   return matches;
 }

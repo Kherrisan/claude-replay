@@ -44,6 +44,17 @@ function createFakeHome(sessions = {}) {
     }
   }
 
+  if (sessions.grok) {
+    for (const [proj, ids] of Object.entries(sessions.grok)) {
+      for (const id of ids) {
+        const dir = join(home, ".grok", "sessions", proj, id);
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, "chat_history.jsonl"), "{}");
+        writeFileSync(join(dir, "events.jsonl"), "{}");
+      }
+    }
+  }
+
   return home;
 }
 
@@ -220,5 +231,16 @@ describe("resolveSessionId", () => {
     const matchB = resolveSessionId("session-bbb", { home });
     assert.equal(matchB.length, 1);
     assert.ok(matchB[0].path.endsWith("session-bbb.jsonl"));
+  });
+
+  it("finds a Grok Build session by ID and prefers chat_history.jsonl", () => {
+    const home = createFakeHome({
+      grok: { "%2Fdata%2Fexp%2Fdkzou%2Fdokploy": ["01a00000-0000-7000-8000-000000000001"] },
+    });
+    const matches = resolveSessionId("01a00000-0000-7000-8000-000000000001", { home });
+    assert.equal(matches.length, 1);
+    assert.equal(matches[0].group, "Grok Build");
+    assert.equal(matches[0].project, "dokploy");
+    assert.ok(matches[0].path.endsWith("chat_history.jsonl"));
   });
 });

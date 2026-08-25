@@ -1,4 +1,4 @@
-export type AgentStreamFormat = "codex" | "claude-code";
+export type AgentStreamFormat = "codex" | "claude-code" | "grok";
 
 export type AgentStreamToolCall = {
 	tool_use_id: string;

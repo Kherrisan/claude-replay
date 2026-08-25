@@ -1,8 +1,9 @@
 // @ts-nocheck
 import { createIncrementalParser as createClaudeCodeParser } from "./formats/claude-code.mjs";
 import { createIncrementalParser as createCodexParser } from "./formats/codex.mjs";
+import { createIncrementalParser as createGrokParser } from "./formats/grok.mjs";
 
-const SUPPORTED_FORMATS = new Set(["codex", "claude-code"]);
+const SUPPORTED_FORMATS = new Set(["codex", "claude-code", "grok"]);
 
 const cloneTurns = (turns) => JSON.parse(JSON.stringify(turns));
 
@@ -17,7 +18,7 @@ const firstChangedTurn = (previous, next) => {
 };
 
 /**
- * Parse native Codex or Claude Code JSONL as chunks arrive.
+ * Parse native Codex, Claude Code, or Grok Build JSONL as chunks arrive.
  *
  * The existing format parsers remain the source of truth for transcript
  * semantics. This wrapper adds stream framing and a stable changedFrom index
@@ -28,7 +29,12 @@ export function createAgentStreamParser({ format }) {
     throw new Error(`Unsupported agent stream format: ${format}`);
   }
 
-  const state = format === "codex" ? createCodexParser() : createClaudeCodeParser();
+  const state =
+    format === "codex"
+      ? createCodexParser()
+      : format === "grok"
+        ? createGrokParser()
+        : createClaudeCodeParser();
   let pendingLine = "";
   let turns = [];
   let warningCount = 0;

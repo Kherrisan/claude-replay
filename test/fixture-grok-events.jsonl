@@ -1,0 +1,4 @@
+{"ts": "2026-08-25T00:00:00.000Z", "type": "turn_started", "session_id": "01a00000-0000-7000-8000-000000000001", "turn_number": 0, "model_id": "grok-4.6", "yolo_mode": true, "conversation_message_count": 1, "session_relationship": "primary", "schema_version": "1.0"}
+{"ts": "2026-08-25T00:00:00.010Z", "type": "phase_changed", "phase": "waiting_for_model"}
+{"ts": "2026-08-25T00:00:01.000Z", "type": "first_token"}
+{"ts": "2026-08-25T00:00:02.000Z", "type": "turn_ended", "outcome": "completed"}

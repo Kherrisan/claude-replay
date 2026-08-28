@@ -342,10 +342,14 @@ describe("CLI flags", () => {
       const content = readFileSync(tmpInput, "utf-8");
       writeFileSync(tmpInput, content + '{"type":"user","message":{"role":"user","content":"extra"},"timestamp":"2025-06-01T10:10:00Z"}\n');
 
-      await new Promise((r) => setTimeout(r, 1000));
-
-      // File should have been rewritten (different size due to extra turn)
-      const size2 = readFileSync(tmpOutput).length;
+      // Rebuild is debounced and CPU-bound; poll instead of racing a fixed
+      // sleep, which flakes when other test files run in parallel.
+      const deadline = Date.now() + 10000;
+      let size2 = size1;
+      while (size2 === size1 && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 100));
+        size2 = readFileSync(tmpOutput).length;
+      }
       assert.ok(size2 !== size1, `file size should change: ${size2} !== ${size1}`);
     } finally {
       child.kill();

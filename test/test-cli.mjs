@@ -338,15 +338,19 @@ describe("CLI flags", () => {
       assert.ok(existsSync(tmpOutput), "output file should exist");
       const size1 = readFileSync(tmpOutput).length;
 
-      // Append to input to trigger rebuild
-      const content = readFileSync(tmpInput, "utf-8");
-      writeFileSync(tmpInput, content + '{"type":"user","message":{"role":"user","content":"extra"},"timestamp":"2025-06-01T10:10:00Z"}\n');
-
-      // Rebuild is debounced and CPU-bound; poll instead of racing a fixed
-      // sleep, which flakes when other test files run in parallel.
+      // Append to trigger a rebuild, then poll for the rewritten output.
+      // fs.watch's event stream starts asynchronously (FSEvents on macOS), so
+      // a single write landing right after "Watching" can be silently missed —
+      // keep appending until the rebuild is observed.
+      const extraLine = '{"type":"user","message":{"role":"user","content":"extra"},"timestamp":"2025-06-01T10:10:00Z"}\n';
       const deadline = Date.now() + 10000;
       let size2 = size1;
+      let lastAppend = 0;
       while (size2 === size1 && Date.now() < deadline) {
+        if (Date.now() - lastAppend > 1500) {
+          writeFileSync(tmpInput, readFileSync(tmpInput, "utf-8") + extraLine);
+          lastAppend = Date.now();
+        }
         await new Promise((r) => setTimeout(r, 100));
         size2 = readFileSync(tmpOutput).length;
       }

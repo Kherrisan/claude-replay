@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.11.0
+
+### New Formats
+- Hermes Agent support — parses `hermes sessions export` files and reads live sessions directly from `~/.hermes/state.db` (and per-profile databases) using the Node 22.5+ built-in `node:sqlite`, with no new dependencies. Includes session-ID resolution, `db#session:<id>` virtual paths, and editor discovery grouped by profile. Contributed by @ebolamerican (#32)
+
+### CLI
+- `--watch` works with Hermes virtual paths and live-rebuilds the replay as the agent writes new messages to the database
+
+### Website
+- The online demo at es617.dev/claude-replay detects and replays Hermes export files; assistant labels now match the CLI for all formats
+
+### Tests
+- Editor-server tests run independently of checkout location; the `--watch` test no longer races the file-watcher startup
+
 ## 0.10.0
 
 ### Player

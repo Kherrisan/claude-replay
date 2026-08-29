@@ -18,6 +18,7 @@ import * as gemini from "./gemini.mjs";
 import * as kimiCode from "./kimi-code.mjs";
 import * as opencode from "./opencode.mjs";
 import * as replay from "./replay.mjs";
+import * as hermes from "./hermes.mjs";
 
 /**
  * Ordered list of JSONL-based format detectors.
@@ -30,6 +31,7 @@ export const formats = [
   codex,
   opencode,
   kimiCode,
+  hermes,
   claudeCode,
   cursor,
 ];
@@ -39,6 +41,7 @@ export const formats = [
  */
 export const textDetectors = [
   gemini,
+  hermes,
 ];
 
 /**

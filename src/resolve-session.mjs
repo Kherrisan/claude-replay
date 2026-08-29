@@ -5,6 +5,7 @@
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { matchHermesSessionIds, hermesProfileForDbPath } from "./hermes-db.mjs";
 
 /**
  * Find session files matching the given ID.
@@ -16,6 +17,17 @@ export function resolveSessionId(sessionId, { home } = {}) {
   const homeDir = home || homedir();
   const target = sessionId.endsWith(".jsonl") ? sessionId : sessionId + ".jsonl";
   const matches = [];
+
+  // Hermes first — virtual SQLite path. Supports full ID and prefix.
+  try {
+    for (const m of matchHermesSessionIds(sessionId, homeDir)) {
+      matches.push({
+        path: `${m.dbPath}#session:${m.id}`,
+        project: hermesProfileForDbPath(m.dbPath),
+        group: "Hermes",
+      });
+    }
+  } catch { /* ignore */ }
 
   // Claude Code: ~/.claude/projects/<project>/<id>.jsonl
   const claudeBase = join(homeDir, ".claude", "projects");

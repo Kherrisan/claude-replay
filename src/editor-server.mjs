@@ -13,6 +13,7 @@ import { extractTitle } from "./formats/claude-code.mjs";
 import { render } from "./renderer.mjs";
 import { extractData } from "./extract.mjs";
 import { getTheme, listThemes } from "./themes.mjs";
+import { listHermesSessions, isHermesVirtualPath, parseHermesVirtualPath, readHermesSessionText, hermesProfileForDbPath } from "./hermes-db.mjs";
 import { DEFAULT_READING_WPM, MIN_READING_WPM, MAX_READING_WPM } from "./reading-rate.mjs";
 
 const EDITOR_HTML_PATH = new URL("../template/editor.html", import.meta.url);
@@ -542,6 +543,40 @@ function discoverSessions() {
     if (kimiGroup.projects.length > 0) groups.push(kimiGroup);
   } catch { /* directory doesn't exist */ }
 
+  // Hermes Agent: SQLite at ~/.hermes/state.db + profiles/*/state.db
+  try {
+    const hermesSessions = listHermesSessions(home);
+    if (hermesSessions.length > 0) {
+      // Group by profile for clearer navigation
+      const byProfile = new Map();
+      for (const sess of hermesSessions) {
+        const profile = hermesProfileForDbPath(sess._hermesDbPath || sess.path.split("#session:")[0]);
+        if (!byProfile.has(profile)) byProfile.set(profile, []);
+        byProfile.get(profile).push(sess);
+      }
+      const hermesProjects = [];
+      for (const [profile, sessions] of byProfile) {
+        hermesProjects.push({
+          name: profile === "default" ? "Hermes (default)" : "Hermes (" + profile + ")",
+          dirName: profile,
+          sessions: sessions.sort((a, b) => {
+            if (!a.date && !b.date) return 0;
+            if (!a.date) return 1;
+            if (!b.date) return -1;
+            return b.date.localeCompare(a.date);
+          }),
+        });
+      }
+      // Sort profiles so "default" first, then alphabetically
+      hermesProjects.sort((a, b) => {
+        if (a.dirName === "default") return -1;
+        if (b.dirName === "default") return 1;
+        return a.dirName.localeCompare(b.dirName);
+      });
+      groups.push({ name: "Hermes", projects: hermesProjects });
+    }
+  } catch { /* hermes discovery is best-effort */ }
+
   return groups;
 }
 
@@ -589,7 +624,13 @@ async function handleApi(req, res, pathname) {
         for (const sess of proj.sessions) {
           if (results.length >= MAX_RESULTS) break;
           try {
-            const text = readFileSync(sess.path, "utf-8");
+            let text;
+            if (isHermesVirtualPath(sess.path)) {
+              const vp = parseHermesVirtualPath(sess.path);
+              text = vp ? (readHermesSessionText(vp.dbPath, vp.sessionId) || "") : "";
+            } else {
+              text = readFileSync(sess.path, "utf-8");
+            }
             const lower = text.toLowerCase();
             const idx = lower.indexOf(query);
             if (idx === -1) continue;

@@ -16,6 +16,7 @@ const CODEX_EDGES_FIXTURE = new URL("./fixture-codex-edges.jsonl", import.meta.u
 const GEMINI_FIXTURE = new URL("./fixture-gemini.json", import.meta.url).pathname;
 const OPENCODE_FIXTURE = new URL("./fixture-opencode.jsonl", import.meta.url).pathname;
 const KIMI_CODE_FIXTURE = new URL("./fixture-kimi-code.jsonl", import.meta.url).pathname;
+const HERMES_FIXTURE = new URL("./fixture-hermes.json", import.meta.url).pathname;
 
 describe("parseTranscript", () => {
   // Fixture produces 3 turns (orphan assistant after tool result merges into previous):
@@ -714,6 +715,7 @@ describe("Turn structure contract", () => {
     { name: "gemini", path: GEMINI_FIXTURE },
     { name: "opencode", path: OPENCODE_FIXTURE },
     { name: "kimi-code", path: KIMI_CODE_FIXTURE },
+    { name: "hermes", path: HERMES_FIXTURE },
   ];
 
   for (const { name, path } of fixtures) {

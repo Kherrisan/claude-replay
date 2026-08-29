@@ -1,7 +1,7 @@
 /**
  * Parse AI coding session transcripts into structured turns.
  *
- * Supports: Claude Code, Cursor, Codex CLI, Gemini CLI, OpenCode, and replay JSONL.
+ * Supports: Claude Code, Cursor, Codex CLI, Gemini CLI, OpenCode, Kimi Code, Hermes Agent, and replay JSONL.
  *
  * This module is the public API — it delegates to format-specific parsers in src/formats/.
  * To add support for a new agent/CLI, see CONTRIBUTING.md.
@@ -9,6 +9,7 @@
 
 import { readFileSync } from "node:fs";
 import { detectFormatFromText, parseFromText } from "./formats/index.mjs";
+import { isHermesVirtualPath, parseHermesVirtualPath, readHermesSessionText } from "./hermes-db.mjs";
 
 /**
  * @typedef {import("./formats/shared.mjs").ToolCall} ToolCall
@@ -21,19 +22,30 @@ export { detectFormatFromText };
 
 /**
  * Detect transcript format by reading a file.
+ * Handles Hermes virtual paths (`~/.hermes/state.db#session:<id>`) directly.
  * @param {string} filePath
  * @returns {string}
  */
 export function detectFormat(filePath) {
+  if (isHermesVirtualPath(filePath)) return "hermes";
   return detectFormatFromText(readFileSync(filePath, "utf-8"));
 }
 
 /**
  * Parse a JSONL/JSON transcript file into Turn[].
+ * Hermes virtual paths are read from SQLite.
  * @param {string} filePath
  * @returns {Turn[]}
  */
 export function parseTranscript(filePath) {
+  if (isHermesVirtualPath(filePath)) {
+    const p = parseHermesVirtualPath(filePath);
+    if (p) {
+      const text = readHermesSessionText(p.dbPath, p.sessionId);
+      if (text) return parseFromText(text);
+    }
+    return [];
+  }
   return parseTranscriptFromText(readFileSync(filePath, "utf-8"));
 }
 

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>claude-replay — Turn AI coding sessions into shareable HTML replays</title>
-<meta name="description" content="Convert Claude Code, Cursor, Codex CLI, Gemini CLI, OpenCode, and Kimi Code session logs into interactive, self-contained HTML replays.">
+<meta name="description" content="Convert Claude Code, Cursor, Codex CLI, Gemini CLI, OpenCode, Kimi Code, and Hermes Agent session logs into interactive, self-contained HTML replays.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='none' stroke='%23bb9af7' stroke-width='2'/><polygon points='12,8 12,24 24,16' fill='%23bb9af7'/></svg>">
 <style>
 :root {
@@ -114,7 +114,7 @@ kbd { background: var(--bg-surface); border: 1px solid var(--border); padding: 1
   <div class="hero">
     <h1><span class="accent">claude-replay</span></h1>
     <p>Turn AI coding sessions into interactive, shareable HTML replays.</p>
-    <p class="sub">Supports Claude Code, Cursor, Codex CLI, Gemini CLI, OpenCode, and Kimi Code transcripts. Single self-contained HTML file, zero dependencies.</p>
+    <p class="sub">Supports Claude Code, Cursor, Codex CLI, Gemini CLI, OpenCode, Kimi Code, and Hermes Agent transcripts. Single self-contained HTML file, zero dependencies.</p>
     <div class="hero-actions">
       <div class="install-box" id="installNpm" title="Click to copy">
         <code>npm install -g claude-replay</code>
@@ -132,7 +132,7 @@ kbd { background: var(--bg-surface); border: 1px solid var(--border); padding: 1
       <p>Drop a .jsonl session file here or <strong>click to browse</strong></p>
       <p style="margin-top:8px;font-size:12px">or <a href="#" id="tryDemo">load a demo session</a></p>
       <p style="margin-top:12px;font-size:11px;color:var(--text-dim)">Tip: session files are in hidden folders. Press <kbd>Cmd+Shift+.</kbd> (macOS), <kbd>Ctrl+H</kbd> (Linux), or enable "Show hidden items" (Windows) in the file picker.</p>
-      <input type="file" id="fileInput" accept=".jsonl">
+      <input type="file" id="fileInput" accept=".jsonl,.json">
     </div>
 
     <div class="status" id="status"></div>
@@ -171,7 +171,7 @@ kbd { background: var(--bg-surface); border: 1px solid var(--border); padding: 1
   <div class="features">
     <h2>Features</h2>
     <div class="feature-grid">
-      <div class="feature-card"><h3>Multi-format</h3><p>Supports Claude Code, Cursor, Codex CLI, Gemini CLI, OpenCode, and Kimi Code transcripts. Auto-detected.</p></div>
+      <div class="feature-card"><h3>Multi-format</h3><p>Supports Claude Code, Cursor, Codex CLI, Gemini CLI, OpenCode, Kimi Code, and Hermes Agent transcripts. Auto-detected.</p></div>
       <div class="feature-card"><h3>Self-contained</h3><p>Single HTML file with no external dependencies. Email it, host it, embed it.</p></div>
       <div class="feature-card"><h3>Web Editor</h3><p>Built-in editor to browse sessions, edit prompts, exclude turns, and add bookmarks.</p></div>
       <div class="feature-card"><h3>Interactive Player</h3><p>Playback with speed control, keyboard shortcuts, diff views, and chapter navigation.</p></div>
@@ -197,8 +197,8 @@ var ClaudeReplay = (() => {
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __hasOwnProp = Object.prototype.hasOwnProperty;
   var __export = (target, all) => {
-    for (var name8 in all)
-      __defProp(target, name8, { get: all[name8], enumerable: true });
+    for (var name9 in all)
+      __defProp(target, name9, { get: all[name9], enumerable: true });
   };
   var __copyProps = (to, from, except, desc) => {
     if (from && typeof from === "object" || typeof from === "function") {
@@ -224,6 +224,11 @@ var ClaudeReplay = (() => {
     themeToCss: () => themeToCss
   });
 
+  // scripts/shims/empty.mjs
+  function createRequire() {
+    throw new Error("createRequire not available in browser");
+  }
+
   // src/formats/claude-code.mjs
   var claude_code_exports = {};
   __export(claude_code_exports, {
@@ -244,7 +249,7 @@ var ClaudeReplay = (() => {
     text = text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>\s*/g, "");
     text = text.replace(/<ide_opened_file>[\s\S]*?<\/ide_opened_file>\s*/g, "");
     text = text.replace(/<local-command-caveat>[\s\S]*?<\/local-command-caveat>\s*/g, "");
-    text = text.replace(/<command-name>([\s\S]*?)<\/command-name>\s*/g, (_, name8) => name8.trim() + "\n");
+    text = text.replace(/<command-name>([\s\S]*?)<\/command-name>\s*/g, (_, name9) => name9.trim() + "\n");
     text = text.replace(/<command-message>[\s\S]*?<\/command-message>\s*/g, "");
     text = text.replace(/<command-args>\s*<\/command-args>\s*/g, "");
     text = text.replace(/<command-args>([\s\S]*?)<\/command-args>\s*/g, (_, args) => {
@@ -630,20 +635,20 @@ var ClaudeReplay = (() => {
         const text = item.text ?? "";
         if (text.trim()) blocks.push({ kind: "text", text, tool_call: null, timestamp: ts });
       } else if (itemType === "function_call") {
-        const name8 = item.name ?? "unknown";
+        const name9 = item.name ?? "unknown";
         let input = {};
         try {
           input = JSON.parse(item.arguments ?? "{}");
         } catch {
           input = { raw: item.arguments };
         }
-        if (name8 === "exec_command" && input.cmd) {
+        if (name9 === "exec_command" && input.cmd) {
           const cmd = input.workdir ? `cd ${input.workdir} && ${input.cmd}` : input.cmd;
           input = { command: cmd };
         }
-        let mappedName = name8;
-        if (name8 === "exec_command") mappedName = "Bash";
-        if (name8 === "apply_patch") {
+        let mappedName = name9;
+        if (name9 === "exec_command") mappedName = "Bash";
+        if (name9 === "apply_patch") {
           const parsed = parseCodexPatch(item.arguments ?? input.raw ?? "");
           mappedName = parsed.isNew ? "Write" : "Edit";
           input = parsed;
@@ -1235,17 +1240,309 @@ var ClaudeReplay = (() => {
     return turns;
   }
 
+  // src/formats/hermes.mjs
+  var hermes_exports = {};
+  __export(hermes_exports, {
+    detect: () => detect8,
+    detectFromText: () => detectFromText2,
+    extractTitle: () => extractTitle2,
+    name: () => name8,
+    parse: () => parse8
+  });
+  var name8 = "hermes";
+  var TOOL_MAP3 = {
+    terminal: "Bash",
+    read_file: "Read",
+    write_file: "Write",
+    patch: "Edit",
+    search_files: "Grep",
+    web_search: "WebSearch",
+    web_extract: "WebFetch",
+    delegate_task: "Task",
+    clarify: "AskUserQuestion",
+    todo: "TodoWrite",
+    skill_view: "Skill",
+    skill_manage: "Skill",
+    skills_list: "Skill",
+    vision_analyze: "Vision",
+    computer_use: "ComputerUse",
+    execute_code: "Bash",
+    session_search: "SessionSearch",
+    text_to_speech: "TTS",
+    browser_navigate: "BrowserNavigate",
+    browser_click: "BrowserClick",
+    browser_type: "BrowserType",
+    browser_snapshot: "BrowserSnapshot",
+    cronjob: "Cron"
+  };
+  function mapHermesToolName(name9) {
+    return TOOL_MAP3[name9] || name9;
+  }
+  function mapHermesToolArgs(rawName, input) {
+    const obj = input && typeof input === "object" && !Array.isArray(input) ? input : null;
+    if (!obj) return obj || {};
+    if (rawName === "patch") {
+      return {
+        file_path: obj.path ?? "",
+        old_string: obj.old_string ?? "",
+        new_string: obj.new_string ?? ""
+      };
+    }
+    if (rawName === "write_file") {
+      return { file_path: obj.path ?? "", content: obj.content ?? "" };
+    }
+    if (rawName === "read_file") {
+      return { file_path: obj.path ?? "" };
+    }
+    if (rawName === "terminal") {
+      return {
+        command: obj.command ?? "",
+        ...typeof obj.workdir === "string" ? { workdir: obj.workdir } : {}
+      };
+    }
+    if (rawName === "delegate_task") {
+      return {
+        description: obj.goal ?? "",
+        prompt: obj.context ?? "",
+        subagent_type: obj.role === "orchestrator" ? "orchestrator" : "subagent"
+      };
+    }
+    return obj;
+  }
+  function toIso(timestamp) {
+    if (timestamp == null || timestamp === "") return "";
+    const n = typeof timestamp === "string" ? parseFloat(timestamp) : timestamp;
+    if (!Number.isFinite(n) || n <= 0) return "";
+    const ms = n < 15778368e5 ? n * 1e3 : n;
+    const d = new Date(ms);
+    return Number.isNaN(d.getTime()) ? "" : d.toISOString();
+  }
+  function parseToolCalls(raw) {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw !== "string" || !raw.trim()) return [];
+    try {
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr : [];
+    } catch {
+      return [];
+    }
+  }
+  function parseArgs(raw) {
+    if (!raw) return {};
+    if (typeof raw === "object" && !Array.isArray(raw)) return raw;
+    if (typeof raw !== "string" || !raw.trim()) return {};
+    try {
+      const obj = JSON.parse(raw);
+      return obj && typeof obj === "object" && !Array.isArray(obj) ? obj : {};
+    } catch {
+      return {};
+    }
+  }
+  function detect8(obj) {
+    return !!(obj && typeof obj === "object" && Array.isArray(obj.messages) && (obj.source !== void 0 || obj.id !== void 0) && // At least hint it's Hermes: messages use {role,timestamp} with numeric
+    // timestamp or have tool_calls, not Claude's {type,message,timestamp}.
+    (obj.messages.length === 0 || obj.messages[0] && typeof obj.messages[0].role === "string"));
+  }
+  function detectFromText2(text) {
+    const trimmed = text.trim();
+    if (!trimmed.startsWith("{")) return false;
+    try {
+      const obj = JSON.parse(trimmed);
+      if (detect8(obj)) return true;
+    } catch {
+    }
+    const firstLine = trimmed.split("\n").find((l) => l.trim());
+    if (!firstLine) return false;
+    try {
+      const obj = JSON.parse(firstLine.trim());
+      return detect8(obj);
+    } catch {
+      return false;
+    }
+  }
+  function extractTitle2(text) {
+    const trimmed = text.trim();
+    if (!trimmed) return null;
+    try {
+      const obj = JSON.parse(trimmed);
+      if (obj && typeof obj.title === "string" && obj.title.trim()) {
+        return obj.title.trim();
+      }
+      if (obj && typeof obj.id === "string" && obj.id) return obj.id;
+    } catch {
+    }
+    for (const line of trimmed.split("\n")) {
+      const t = line.trim();
+      if (!t) continue;
+      try {
+        const obj = JSON.parse(t);
+        if (obj && typeof obj.title === "string" && obj.title.trim()) {
+          return obj.title.trim();
+        }
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  }
+  function buildTurnsFromHermesMessages(messages) {
+    const turns = [];
+    let turnIndex = 0;
+    const pending = /* @__PURE__ */ new Map();
+    let currentTurn = null;
+    const newTurn = (userText, ts) => {
+      turnIndex++;
+      const t = { index: turnIndex, user_text: userText, blocks: [], timestamp: ts || "" };
+      turns.push(t);
+      currentTurn = t;
+      return t;
+    };
+    const sorted = [...messages].sort((a, b) => {
+      const ta = a.timestamp ?? 0;
+      const tb = b.timestamp ?? 0;
+      if (ta !== tb) return ta - tb;
+      return (a.id ?? 0) - (b.id ?? 0);
+    });
+    for (const msg of sorted) {
+      const role = msg.role;
+      const ts = toIso(msg.timestamp);
+      if (role === "user") {
+        const text = (msg.content || "").trim();
+        if (!text) continue;
+        newTurn(text, ts);
+        continue;
+      }
+      if (role === "assistant") {
+        const blocks = [];
+        const thinking = (msg.reasoning_content || msg.reasoning || "").trim();
+        if (thinking) {
+          blocks.push({ kind: "thinking", text: thinking, tool_call: null, timestamp: ts });
+        }
+        const text = (msg.content || "").trim();
+        if (text) {
+          blocks.push({ kind: "text", text, tool_call: null, timestamp: ts });
+        }
+        const calls = parseToolCalls(msg.tool_calls, msg.id);
+        for (const call of calls) {
+          const rawName = call.function?.name || call.name || "";
+          const input = parseArgs(call.function?.arguments);
+          const mappedName = mapHermesToolName(rawName);
+          const mappedInput = mapHermesToolArgs(rawName, input);
+          const toolId = call.call_id || call.id || `hermes-${rawName}-${msg.id}`;
+          const toolCall = {
+            tool_use_id: toolId,
+            name: mappedName,
+            input: mappedInput,
+            result: null,
+            resultTimestamp: null,
+            is_error: false,
+            _hermes_raw_name: rawName
+          };
+          blocks.push({ kind: "tool_use", text: "", tool_call: toolCall, timestamp: ts });
+          pending.set(toolId, toolCall);
+          if (call.id && call.id !== toolId) pending.set(call.id, toolCall);
+          if (call.call_id && call.call_id !== toolId) pending.set(call.call_id, toolCall);
+        }
+        if (blocks.length === 0) continue;
+        if (!currentTurn) {
+          newTurn("", ts);
+        }
+        currentTurn.blocks.push(...blocks);
+        if (!currentTurn.timestamp) currentTurn.timestamp = ts;
+        continue;
+      }
+      if (role === "tool") {
+        const tcid = msg.tool_call_id;
+        if (!tcid) continue;
+        const block = pending.get(tcid);
+        if (!block) continue;
+        const result = (msg.content || "").trim();
+        if (result) {
+          try {
+            const parsed = JSON.parse(result);
+            if (typeof parsed === "object" && parsed !== null) {
+              if (typeof parsed.output === "string") {
+                block.result = parsed.output;
+              } else {
+                block.result = JSON.stringify(parsed, null, 2);
+              }
+            } else {
+              block.result = result;
+            }
+          } catch {
+            block.result = result;
+          }
+        }
+        block.resultTimestamp = ts || null;
+        if (msg.tool_name) {
+          if (result.includes('"success": false') || result.includes('"success":false')) {
+            block.is_error = true;
+          }
+        }
+        pending.delete(tcid);
+        for (const [k, v] of pending) {
+          if (v === block) pending.delete(k);
+        }
+        continue;
+      }
+    }
+    const filtered = turns.filter((t) => {
+      if (t.user_text && t.user_text.trim()) return true;
+      return t.blocks.some((b) => {
+        if (b.kind === "tool_use") return true;
+        if (b.kind === "text" && b.text && b.text !== "No response requested.") return true;
+        if (b.kind === "thinking" && b.text) return true;
+        return false;
+      });
+    });
+    for (let i = 0; i < filtered.length; i++) filtered[i].index = i + 1;
+    return filtered;
+  }
+  function parse8(text) {
+    const trimmed = text.trim();
+    if (!trimmed) return [];
+    try {
+      const obj = JSON.parse(trimmed);
+      if (Array.isArray(obj.messages)) {
+        return buildTurnsFromHermesMessages(obj.messages);
+      }
+    } catch {
+    }
+    const allMessages = [];
+    for (const line of trimmed.split("\n")) {
+      const t = line.trim();
+      if (!t) continue;
+      try {
+        const obj = JSON.parse(t);
+        if (Array.isArray(obj.messages)) {
+          allMessages.push(...obj.messages);
+        } else if (obj.role) {
+          allMessages.push(obj);
+        }
+      } catch {
+        continue;
+      }
+    }
+    if (allMessages.length > 0) {
+      return buildTurnsFromHermesMessages(allMessages);
+    }
+    return [];
+  }
+
   // src/formats/index.mjs
   var formats = [
     replay_exports,
     codex_exports,
     opencode_exports,
     kimi_code_exports,
+    hermes_exports,
     claude_code_exports,
     cursor_exports
   ];
   var textDetectors = [
-    gemini_exports
+    gemini_exports,
+    hermes_exports
   ];
   function detectFormatFromText(text) {
     for (const fmt of textDetectors) {
@@ -1272,6 +1569,15 @@ var ClaudeReplay = (() => {
     const fmt = allFormats.find((f) => f.name === format);
     if (fmt) return fmt.parse(text);
     return [];
+  }
+
+  // src/hermes-db.mjs
+  var import_meta = {};
+  var DatabaseSync = null;
+  try {
+    DatabaseSync = createRequire(import_meta.url)("node:sqlite").DatabaseSync;
+  } catch {
+    DatabaseSync = null;
   }
 
   // src/parser.mjs
@@ -1462,12 +1768,12 @@ var ClaudeReplay = (() => {
     `
     }
   };
-  function getTheme(name8) {
-    if (!(name8 in BUILTIN_THEMES)) {
+  function getTheme(name9) {
+    if (!(name9 in BUILTIN_THEMES)) {
       const available = Object.keys(BUILTIN_THEMES).sort().join(", ");
-      throw new Error(`Unknown theme '${name8}'. Available: ${available}`);
+      throw new Error(`Unknown theme '${name9}'. Available: ${available}`);
     }
-    return BUILTIN_THEMES[name8];
+    return BUILTIN_THEMES[name9];
   }
   function themeToCss(theme) {
     const lines = [];
@@ -1766,7 +2072,7 @@ function gatherOptions() {
   return {
     theme,
     title: $("optTitle").value || "Replay — " + currentFileName.replace(".jsonl", ""),
-    assistantLabel: currentFormat === "codex" ? "Codex" : currentFormat === "cursor" ? "Assistant" : "Claude",
+    assistantLabel: currentFormat === "hermes" ? "Hermes" : currentFormat === "gemini" ? "Gemini" : currentFormat === "codex" ? "Codex" : currentFormat === "cursor" ? "Assistant" : currentFormat === "opencode" ? "OpenCode" : currentFormat === "kimi-code" ? "Kimi" : "Claude",
     redactSecrets: true,
     redactRules,
     bookmarks: currentTurns._bookmarks || [],

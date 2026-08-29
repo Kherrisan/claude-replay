@@ -231,6 +231,11 @@ if (positionals.length > MAX_INPUTS) {
 
 const inputFiles = [];
 for (const arg of positionals) {
+  // Hermes virtual path like ~/.hermes/state.db#session:ID — treat as valid input even though existsSync is false due to the fragment
+  if (arg.includes("#session:")) {
+    const frag = arg.split("#session:")[0];
+    if (existsSync(frag)) { inputFiles.push(arg); continue; }
+  }
   if (existsSync(arg)) {
     inputFiles.push(arg);
   } else if (!arg.endsWith(".jsonl") && !arg.endsWith(".json")) {
@@ -239,7 +244,7 @@ for (const arg of positionals) {
     const matches = resolveSessionId(arg);
     if (matches.length === 0) {
       console.error(`Error: no session found matching "${arg}"`);
-      console.error("Searched ~/.claude/projects/, ~/.cursor/projects/, ~/.codex/sessions/, and ~/.gemini/tmp/");
+      console.error("Searched ~/.claude/projects/, ~/.cursor/projects/, ~/.codex/sessions/, ~/.gemini/tmp/, and Hermes SQLite (~/.hermes/state.db)");
       process.exit(1);
     } else if (matches.length === 1) {
       inputFiles.push(matches[0].path);
@@ -350,16 +355,37 @@ if (hasReadingWpm) {
 
 const speed = parseFloat(values.speed) || 1.0;
 
-// Derive title: CLI override > parent folder name > filename
+// Derive title: CLI override > Hermes session title > parent folder name > filename
 let title = values.title;
 if (!title) {
-  const dir = basename(dirname(inputFiles[0]));
-  const parts = dir.replace(/^-+/, "").split("-");
-  const projectName = parts.length > 1 ? parts.slice(-2).join("-") : parts[0];
-  if (projectName && projectName !== "." && projectName !== "/") {
-    title = "Replay — " + projectName;
+  // Hermes sessions carry their own title; other formats derive it from the path.
+  let hermesTitle = null;
+  try {
+    const firstInput = inputFiles[0];
+    if (firstInput && detectFormat(firstInput) === "hermes") {
+      if (firstInput.includes("#session:")) {
+        const { readHermesSessionRaw, parseHermesVirtualPath } = await import("../src/hermes-db.mjs");
+        const vp = parseHermesVirtualPath(firstInput);
+        const raw = vp && readHermesSessionRaw(vp.dbPath, vp.sessionId);
+        if (raw && raw.title) hermesTitle = raw.title;
+      } else {
+        const { extractTitle } = await import("../src/formats/hermes.mjs");
+        hermesTitle = extractTitle(readFileSync(firstInput, "utf-8"));
+      }
+    }
+  } catch { /* fall back to path-derived title */ }
+  if (hermesTitle) {
+    title = "Replay — " + hermesTitle;
   } else {
-    title = "Replay — " + basename(inputFiles[0], ".jsonl");
+    const rawName = (inputFiles[0] || "").split("#session:")[0];
+    const dir = basename(dirname(rawName));
+    const parts = dir.replace(/^-+/, "").split("-");
+    const projectName = parts.length > 1 ? parts.slice(-2).join("-") : parts[0];
+    if (projectName && projectName !== "." && projectName !== "/") {
+      title = "Replay — " + projectName;
+    } else {
+      title = "Replay — " + basename(rawName, ".jsonl");
+    }
   }
 }
 
@@ -488,7 +514,7 @@ function buildReplay() {
     redactSecrets: !values["no-auto-redact"],
     redactRules,
     userLabel: values["user-label"],
-    assistantLabel: values["assistant-label"] || (format === "gemini" ? "Gemini" : format === "codex" ? "Codex" : format === "cursor" ? "Assistant" : format === "opencode" ? "OpenCode" : format === "kimi-code" ? "Kimi" : "Claude"),
+    assistantLabel: values["assistant-label"] || (format === "hermes" ? "Hermes" : format === "gemini" ? "Gemini" : format === "codex" ? "Codex" : format === "cursor" ? "Assistant" : format === "opencode" ? "OpenCode" : format === "kimi-code" ? "Kimi" : "Claude"),
     title,
     description: values.description,
     ogImage: values["og-image"],
@@ -566,13 +592,15 @@ if (values.serve) {
 
   if (values.watch) {
     let debounce;
-    for (const file of inputFiles) {
+    // Hermes virtual paths aren't real files — watch the underlying SQLite DB.
+    const watchPaths = new Set(inputFiles.map((f) => f.split("#session:")[0]));
+    for (const file of watchPaths) {
       fsWatch(file, () => {
         clearTimeout(debounce);
         debounce = setTimeout(rebuild, 300);
       });
     }
-    console.error(`Watching ${inputFiles.length} file(s) for changes...`);
+    console.error(`Watching ${watchPaths.size} file(s) for changes...`);
   }
 
   server.listen(servePort, () => {
@@ -603,13 +631,15 @@ if (values.serve) {
 
   rebuild();
   let debounce;
-  for (const file of inputFiles) {
+  // Hermes virtual paths aren't real files — watch the underlying SQLite DB.
+  const watchPaths = new Set(inputFiles.map((f) => f.split("#session:")[0]));
+  for (const file of watchPaths) {
     fsWatch(file, () => {
       clearTimeout(debounce);
       debounce = setTimeout(rebuild, 300);
     });
   }
-  console.error(`Watching ${inputFiles.length} file(s) for changes...`);
+  console.error(`Watching ${watchPaths.size} file(s) for changes...`);
 } else {
   // Normal mode: build once and output
   const { html, turnCount } = buildReplay();

@@ -2,6 +2,13 @@ const SUPPORTED_FORMATS = new Set(["codex", "claude-code"]);
 const GOAL_STATUSES = new Set(["active", "paused", "blocked", "limited", "complete"]);
 const GOAL_CONTROL_METHOD = "_session/goal";
 
+const mapGoalStatus = (status) => {
+	if (typeof status !== "string") return null;
+	if (GOAL_STATUSES.has(status)) return status;
+	if (status === "completed") return "complete";
+	return null;
+};
+
 const asRecord = (value) =>
   value && typeof value === "object" && !Array.isArray(value) ? value : {};
 
@@ -154,6 +161,22 @@ export function createAgentEventNormalizer({ format }) {
           events.push({ kind: "task", status: "completed" });
         }
         return events;
+      }
+      if (type === "goal_updated") {
+        const status = mapGoalStatus(update.status);
+        const objective = typeof update.objective === "string" ? update.objective.trim() : "";
+        if (!status || !objective) return [];
+        return [{
+          kind: "goal",
+          goal: {
+            objective,
+            status,
+            controlMethod: GOAL_CONTROL_METHOD,
+          },
+        }];
+      }
+      if (type === "turn_completed") {
+        return [{ kind: "turn", status: "completed" }];
       }
       if (type === "tool_call") {
         if (typeof update.toolCallId !== "string" || !update.toolCallId) return [];

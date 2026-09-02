@@ -183,6 +183,46 @@ describe("ACP agent event normalization", () => {
     }), []);
   });
 
+  it("normalizes Grok goal_updated and turn_completed session updates", () => {
+    const normalizer = createAgentEventNormalizer({ format: "claude-code" });
+    assert.deepEqual(normalizer.push({
+      update: {
+        sessionUpdate: "goal_updated",
+        goal_id: "goal-1",
+        objective: "List files in the current directory",
+        status: "active",
+        phase: "executing",
+      },
+    }), [{
+      kind: "goal",
+      goal: {
+        objective: "List files in the current directory",
+        status: "active",
+        controlMethod: "_session/goal",
+      },
+    }]);
+    assert.deepEqual(normalizer.push({
+      update: {
+        sessionUpdate: "goal_updated",
+        objective: "List files in the current directory",
+        status: "completed",
+      },
+    }), [{
+      kind: "goal",
+      goal: {
+        objective: "List files in the current directory",
+        status: "complete",
+        controlMethod: "_session/goal",
+      },
+    }]);
+    assert.deepEqual(normalizer.push({
+      update: { sessionUpdate: "turn_completed", stop_reason: "end_turn" },
+    }), [{ kind: "turn", status: "completed" }]);
+    assert.deepEqual(normalizer.push({
+      update: { sessionUpdate: "goal_updated", objective: "x", status: "unknown" },
+    }), []);
+  });
+
   it("rejects malformed goals and unrelated session info updates", () => {
     const normalizer = createAgentEventNormalizer({ format: "codex" });
     assert.deepEqual(normalizer.push({
